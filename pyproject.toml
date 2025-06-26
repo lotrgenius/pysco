@@ -1,0 +1,35 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project]
+name = "pysco-nbody"
+version = "1.0.8"
+authors = [
+    { name = "Michel-Andrès Breton", email = "michel-andres.breton@obspm.fr" },
+]
+description = "A Python library to run N-body simulations with modified gravity"
+readme = "README.md"
+requires-python = ">=3.11, <3.14"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "numpy",
+    "matplotlib",
+    "astropy",
+    "numba",
+    "pandas",
+    "scipy",
+    "pyarrow",
+    "h5py",
+    "rich",
+    #"Pylians",    # Only for reading Gadget snapshots
+    "icc-rt", # Optional
+    "pyfftw", # Optional
+]
+
+[project.urls]
+Homepage = "https://github.com/mianbreton/pysco"
