@@ -17,6 +17,7 @@ import multigrid
 import utils
 import cubic
 import linear
+import pysco.linear3a as linear3a
 import laplacian
 import quartic
 import logging
@@ -202,43 +203,40 @@ def pm(
     #NEW FOR MOG
     elif "mog" == param["theory"].casefold():
         print("additional field value:")
-        print(np.mean(additional_field),np.max(additional_field),np.min(additional_field))
+        print(np.mean(additional_field))
         #define mog-specific variables
-        coefficient = param["aexp"]**2*(param["Om_m"] / param["aexp"] + param["Om_lambda"] / param["aexp"] ** (3 * param["w0"] + 1) + 20 * np.pi * param["V_factor"])
-        fivesixths_c2 = np.float32(
-            -5/6 * param["aexp"]**2
-            * (c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"]))
-            ** 2
-        )  # m -> km -> BU
+        # coefficient = param["aexp"]**2*(param["Om_m"] / param["aexp"] + param["Om_lambda"] / param["aexp"] ** (3 * param["w0"] + 1) + 20 * np.pi * param["V_factor"])
+        # fivesixths_c2 = np.float32(
+        #     -5/6 * param["aexp"]**2
+        #     * (c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"]))
+        #     ** 2
+        # )  # m -> km -> BU
         # fivesixths_c2 = np.float32(0)
+        # if LINEAR_NEWTON_SOLVER == "full_fft":
+        #     print("pick another solver for now")
+        #     force = 0
+        # else:
+        #     force = mesh.derivative_mog(
+        #         potential,
+        #         additional_field,
+        #         fivesixths_c2,
+        #     )
+        #     additional_field_fourier = fourier.fft_3D_real(additional_field, param["nthreads"])
+        #     MAS_index = param["MAS_index"]
+        #     if MAS_index == 0:
+        #         force_additional_fourier = fourier.inverse_laplacian(additional_field_fourier)
+        #     else:
+        #         force_additional_fourier = fourier.inverse_laplacian_compensated(additional_field_fourier, MAS_index)
+        #     #TODO: get this working
+        #     if force_additional_fourier is not None:
+        #         print("adding additional force term")
+        #         force_additional = fourier.ifft_3D_real(force_additional_fourier, param["nthreads"])
+        #         force+=coefficient*force_additional
         if LINEAR_NEWTON_SOLVER == "full_fft":
-            print("pick another solver for now")
-            force = 0
+            force = fft_force(rhs, param, param["save_pk"])
+            rhs = 0
         else:
-            force = mesh.derivative_mog(
-                potential,
-                additional_field,
-                fivesixths_c2,
-            )
-            #wrong for MOG, just trying it
-            # force = mesh.derivative_fR(
-            #     potential,
-            #     additional_field,
-            #     fivesixths_c2,
-            #     param["fR_n"],
-            #     param["gradient_stencil_order"],
-            # )
-            additional_field_fourier = fourier.fft_3D_real(additional_field, param["nthreads"])
-            MAS_index = param["MAS_index"]
-            if MAS_index == 0:
-                force_additional_fourier = fourier.inverse_laplacian(additional_field_fourier)
-            else:
-                force_additional_fourier = fourier.inverse_laplacian_compensated(additional_field_fourier, MAS_index)
-            #TODO: get this working
-            if force_additional_fourier is not None:
-                print("adding additional force term")
-                force_additional = fourier.ifft_3D_real(force_additional_fourier, param["nthreads"])
-                force+=coefficient*force_additional
+            force = mesh.derivative(potential, param["gradient_stencil_order"])
     else:
         if LINEAR_NEWTON_SOLVER == "full_fft":
             force = fft_force(rhs, param, param["save_pk"])
@@ -317,7 +315,8 @@ def initialise_potential(
             and "mog".casefold() == param["theory"].casefold()
         ):
             q = param["mog_q"]
-            potential = linear.initialise_potential(rhs, q)
+            potential = linear3a.initialise_potential(rhs, q)
+            print("potential is", np.mean(potential))
         else:
             potential = laplacian.initialise_potential(rhs)
     else:
@@ -409,16 +408,45 @@ def get_additional_field(
             logging.info(f"{fR_a=}")
             return u_scalaron
         #NEW FOR MOG
+        # case "mog":
+        #     #define all constants (with respect to the G field) here
+        #     c2 = (
+        #         c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"])
+        #     ) ** 2  # m -> km -> BU
+        #     f1 = np.float32(param["aexp"] * param["Om_m"] / (c2 * 2))
+        #     f2=-f1
+        #     q = np.float32((1/(2 * c2)) * (param["Om_m"] / param["aexp"] + param["Om_lambda"] / param["aexp"]**(3 * param["w0"] + 1) - 8 * np.pi * param["aexp"] ** 2 * param["V_factor"]/(5 - 48 * np.pi) + 2 * c2)) #for MOG
+        #     param["mog_q"] = q
+        #     dens_term = utils.linear_operator(density, f1, f2)
+        #     dens_lap = 3*f1*laplacian.operator(density)
+        #     additional_field = initialise_potential(
+        #         additional_field, dens_term, param, tables
+        #     )
+        #     u_scalaron = additional_field
+        #     u_scalaron = multigrid.FAS(u_scalaron, dens_term, param)
+        #     return u_scalaron
         case "mog":
-            #define all constants (with respect to the G field) here
-            c2 = (
-                c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"])
-            ) ** 2  # m -> km -> BU
-            f1 = np.float32(param["aexp"] * param["Om_m"] / (c2 * 2))
-            f2=-f1
-            q = np.float32((1/(2 * c2)) * (param["Om_m"] / param["aexp"] + param["Om_lambda"] / param["aexp"]**(3 * param["w0"] + 1) - 8 * np.pi * param["aexp"] ** 2 * param["V_factor"]/(5 - 48 * np.pi) + 2 * c2)) #for MOG
+            # E_fracs_eff = param["Om_m"] + param["Om_l"]*param["aexp"]**(-3*param["w0"]) + param["V_factor"]*8*np.pi/3*param["aexp"]**3
+            # E_fracs = param["Om_m"] + param["Om_l"]*param["aexp"]**(-3*param["w0"])
+            # co1 = (1/16/np.pi-1)/param["V_factor"]/param["aexp"]**2
+            # co2 = -5/16 + 3*E_fracs_eff/param["V_factor"]/param["aexp"]**3 - 3*(E_fracs_eff+E_fracs)/16/np.pi/param["V_factor"]/param["aexp"]**3
+            # co3 = 8*np.pi*param["aexp"]**2*param["V_factor"] + 3*E_fracs/2/param["aexp"] - 9*E_fracs_eff/16/param["aexp"] + 9*E_fracs_eff*E_fracs/16/np.pi/param["V_factor"]/param["aexp"]**4
+            # co4 = 3*E_fracs/2/param["aexp"] + 9*E_fracs_eff*E_fracs/16/np.pi/param["V_factor"]/param["aexp"]**4
+            # co5 = -3*E_fracs/16/np.pi/param["V_factor"]/param["aexp"]**3
+            # co6 = -co4
+            co1 = 1e-30
+            co2 = 1e-30
+            co3 = 1e-3
+            co4 = 1e6
+            co5 = 1
+            co6 = -1e6
+            c2 = (c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"])) ** 2  # m -> km -> BU
+            q = np.array([np.float32(co1), np.float32(co2), np.float32(co3)])
+            print('Q is type:', type(q))
             param["mog_q"] = q
-            dens_term = utils.linear_operator(density, f1, f2)
+            print("density is", np.mean(density))
+            dens_term = np.float32(co4)*density + np.float32(co5)*laplacian.operator(density) + np.float32(co6)
+            print("dens_term is", np.mean(dens_term))
             additional_field = initialise_potential(
                 additional_field, dens_term, param, tables
             )

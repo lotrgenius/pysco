@@ -13,7 +13,7 @@ import laplacian
 import laplacian_reformulated
 import cubic
 import quartic
-import linear as linmog
+import pysco.linear3a as linmog
 import mesh
 import utils
 import logging
@@ -424,7 +424,7 @@ def smoothing(
             )
     #NEW FOR MOG
     elif param["compute_additional_field"] and "mog" == param["theory"].casefold():
-        q = np.float32(param["mog_q"])
+        q = param["mog_q"]
         if len(rhs) == 0:
             linmog.smoothing(x, b, q, n_smoothing)
         else:
@@ -585,6 +585,8 @@ def V_cycle_FAS(
     >>> V_cycle_FAS(x, b, param)
     """
     smoothing(x, b, param["Npre"], param, rhs)
+    print("x check:", np.mean(x))
+    print("nlevel is", nlevel)
     res_c = restrict_residual(x, b, param, rhs)
     x_c = mesh.restriction(x)
     x_corr_c = x_c.copy()
