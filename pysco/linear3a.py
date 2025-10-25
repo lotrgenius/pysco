@@ -515,9 +515,9 @@ def residual_error(
                 faces, a2, fd = _stencil_sums(x, i, j, k)
                 p = h2 * b[i, j, k] + c2 * faces + c1 * invh2 * (-np.float32(12.0)*faces + a2 + np.float32(2.0)*fd)
                 tmp = qeff_h2 * x[i, j, k] + p
-                print("p from res calc is", p)
-                print("qeffh2 from res calc is", qeff_h2)
-                res += tmp * tmp
+                # print("p from res calc is", p)
+                # print("qeffh2 from res calc is", qeff_h2)
+                res += tmp * tmp 
     return np.sqrt(res)
 
 

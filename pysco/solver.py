@@ -145,10 +145,12 @@ def pm(
     additional_field = get_additional_field(additional_field, density, param, tables)
 
     # TODO: Try to keep Phidot and initialise Phi_i = Phi_(i-1) + Phidot*dt
-    param["compute_additional_field"] = False
-    rhs_poisson(density, additional_field, param)
-    rhs = density
-    del density
+
+    if not "mog" == param["theory"].casefold():
+        param["compute_additional_field"] = False
+        rhs_poisson(density, additional_field, param)
+        rhs = density
+        del density
 
     match LINEAR_NEWTON_SOLVER:
         case "multigrid":
@@ -204,39 +206,17 @@ def pm(
     elif "mog" == param["theory"].casefold():
         print("additional field value:")
         print(np.mean(additional_field))
-        #define mog-specific variables
-        # coefficient = param["aexp"]**2*(param["Om_m"] / param["aexp"] + param["Om_lambda"] / param["aexp"] ** (3 * param["w0"] + 1) + 20 * np.pi * param["V_factor"])
-        # fivesixths_c2 = np.float32(
-        #     -5/6 * param["aexp"]**2
-        #     * (c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"]))
-        #     ** 2
-        # )  # m -> km -> BU
-        # fivesixths_c2 = np.float32(0)
-        # if LINEAR_NEWTON_SOLVER == "full_fft":
-        #     print("pick another solver for now")
-        #     force = 0
-        # else:
-        #     force = mesh.derivative_mog(
-        #         potential,
-        #         additional_field,
-        #         fivesixths_c2,
-        #     )
-        #     additional_field_fourier = fourier.fft_3D_real(additional_field, param["nthreads"])
-        #     MAS_index = param["MAS_index"]
-        #     if MAS_index == 0:
-        #         force_additional_fourier = fourier.inverse_laplacian(additional_field_fourier)
-        #     else:
-        #         force_additional_fourier = fourier.inverse_laplacian_compensated(additional_field_fourier, MAS_index)
-        #     #TODO: get this working
-        #     if force_additional_fourier is not None:
-        #         print("adding additional force term")
-        #         force_additional = fourier.ifft_3D_real(force_additional_fourier, param["nthreads"])
-        #         force+=coefficient*force_additional
-        if LINEAR_NEWTON_SOLVER == "full_fft":
-            force = fft_force(rhs, param, param["save_pk"])
-            rhs = 0
-        else:
-            force = mesh.derivative(potential, param["gradient_stencil_order"])
+        E_fracs_eff = param["Om_m"] + param["Om_l"]*param["aexp"]**(-3*param["w0"]) + param["V_factor"]*8*np.pi/3*param["aexp"]**3
+        co7 = (1-1/16/np.pi)/param["V_factor"]/param["aexp"]**2
+        co8 = -3/16 + 2*E_fracs_eff/np.pi/param["V_factor"]/param["aexp"]**3
+        co9 = 2*E_fracs_eff/np.pi/param["V_factor"]/param["aexp"]**3
+        co10 = -co9
+        mogpotential = (co7*laplacian.operator(additional_field) + co8*additional_field + co9*density + co10).astype("float32")
+
+        lap_mogpotential = laplacian.operator(mogpotential)
+        force = fft_force(lap_mogpotential, param)
+        mogpotential = 0
+
     else:
         if LINEAR_NEWTON_SOLVER == "full_fft":
             force = fft_force(rhs, param, param["save_pk"])
@@ -426,25 +406,15 @@ def get_additional_field(
         #     u_scalaron = multigrid.FAS(u_scalaron, dens_term, param)
         #     return u_scalaron
         case "mog":
-            # E_fracs_eff = param["Om_m"] + param["Om_l"]*param["aexp"]**(-3*param["w0"]) + param["V_factor"]*8*np.pi/3*param["aexp"]**3
-            # E_fracs = param["Om_m"] + param["Om_l"]*param["aexp"]**(-3*param["w0"])
-            # co1 = (1/16/np.pi-1)/param["V_factor"]/param["aexp"]**2
-            # co2 = -5/16 + 3*E_fracs_eff/param["V_factor"]/param["aexp"]**3 - 3*(E_fracs_eff+E_fracs)/16/np.pi/param["V_factor"]/param["aexp"]**3
-            # co3 = 8*np.pi*param["aexp"]**2*param["V_factor"] + 3*E_fracs/2/param["aexp"] - 9*E_fracs_eff/16/param["aexp"] + 9*E_fracs_eff*E_fracs/16/np.pi/param["V_factor"]/param["aexp"]**4
-            # co4 = 3*E_fracs/2/param["aexp"] + 9*E_fracs_eff*E_fracs/16/np.pi/param["V_factor"]/param["aexp"]**4
-            # co5 = -3*E_fracs/16/np.pi/param["V_factor"]/param["aexp"]**3
-            # co6 = -co4
-            co1 = 1e-30
-            co2 = 1e-30
-            co3 = 1e-3
-            co4 = 1e6
-            co5 = 1
-            co6 = -1e6
-            c2 = (c.value * 1e-3 * param["unit_t"] / (param["unit_l"] * param["aexp"])) ** 2  # m -> km -> BU
+            E_fracs_eff = param["Om_m"] + param["Om_l"]*param["aexp"]**(-3*param["w0"]) + param["V_factor"]*8*np.pi/3*param["aexp"]**3
+            co1 = (1/16/np.pi-1)/param["V_factor"]/param["aexp"]**2
+            co2 = 3/16 - 8*np.pi + (3-35/16/np.pi)*E_fracs_eff/param["V_factor"]/param["aexp"]**3
+            co3 = 19/2*np.pi*param["aexp"]**2*param["V_factor"] - 241*E_fracs_eff/16/param["aexp"] + 6*E_fracs_eff**2/np.pi/param["V_factor"]/param["aexp"]**4
+            co4 = -29/2*E_fracs_eff/param["aexp"] + 6*E_fracs_eff**2/np.pi/param["V_factor"]/param["aexp"]**4
+            co5 = -2*E_fracs_eff/np.pi/param["V_factor"]/param["aexp"]**3
+            co6 = -co4
             q = np.array([np.float32(co1), np.float32(co2), np.float32(co3)])
-            print('Q is type:', type(q))
             param["mog_q"] = q
-            print("density is", np.mean(density))
             dens_term = np.float32(co4)*density + np.float32(co5)*laplacian.operator(density) + np.float32(co6)
             print("dens_term is", np.mean(dens_term))
             additional_field = initialise_potential(
@@ -659,6 +629,62 @@ def fft_force(
         force = fourier.gradient_inverse_laplacian(rhs_fourier)
     else:
         force = fourier.gradient_inverse_laplacian_compensated(rhs_fourier, MAS_index)
+
+    if "save_pk" in param:
+        if param["save_pk"]:
+            k, Pk, Nmodes = fourier.fourier_grid_to_Pk(rhs_fourier, MAS_index)
+            rhs_fourier = 0
+            Pk *= (
+                (param["boxlen"] / len(rhs) ** 2) ** 3
+                / (1.5 * param["aexp"] * param["Om_m"]) ** 2
+                / param["parametrized_mu_z"] ** 2
+            )
+            k *= 2 * np.pi / param["boxlen"]
+            iostream.write_power_spectrum_to_ascii_file(k, Pk, Nmodes, param)
+    rhs_fourier = 0
+    return fourier.ifft_3D_real_grad(force, param["nthreads"])
+
+#NEW FOR MOG
+@utils.time_me
+def fft_force_mog(
+    rhs: npt.NDArray[np.float32],
+    param: pd.Series,
+) -> npt.NDArray[np.float32]:
+    """Solves the Newtonian linear Poisson equation using Fast Fourier Transforms and outputs Force
+
+    Parameters
+    ----------
+    rhs : npt.NDArray[np.float32]
+        Right-hand side of Poisson Equation (density) [N_cells_1d, N_cells_1d,N_cells_1d]
+    param : pd.Series
+        Parameter container
+
+    Returns
+    -------
+    npt.NDArray[np.float32]
+        Force [3, N_cells_1d, N_cells_1d,N_cells_1d]
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import pandas as pd
+    >>> from pysco.solver import fft_force
+    >>> rhs = np.random.rand(32, 32, 32).astype(np.float32)
+    >>> param = pd.Series({
+        "nthreads": 4,
+        "boxlen": 100.0,
+        "npart": 1000000,
+        "aexp": 1.0,
+        "Om_m": 0.3,
+        'MAS_index':0})
+    >>> force = fft_force(rhs, param)
+    """
+    MAS_index = param["MAS_index"]
+    rhs_fourier = fourier.fft_3D_real(rhs, param["nthreads"])
+
+
+    force = fourier.gradient(rhs_fourier)
+
 
     if "save_pk" in param:
         if param["save_pk"]:

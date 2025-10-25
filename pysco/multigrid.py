@@ -585,8 +585,8 @@ def V_cycle_FAS(
     >>> V_cycle_FAS(x, b, param)
     """
     smoothing(x, b, param["Npre"], param, rhs)
-    print("x check:", np.mean(x))
-    print("nlevel is", nlevel)
+    print("mean of x is", np.mean(x))
+    print("median of x is", np.median(x))
     res_c = restrict_residual(x, b, param, rhs)
     x_c = mesh.restriction(x)
     x_corr_c = x_c.copy()
@@ -599,6 +599,7 @@ def V_cycle_FAS(
     L_c = 0
 
     if nlevel >= (param["ncoarse"] - 3):
+        print("stepped into loop")
         smoothing(x_corr_c, b_c, param["Npre"], param, res_c)
     else:
         V_cycle_FAS(x_corr_c, b_c, param, nlevel + 1, res_c)
